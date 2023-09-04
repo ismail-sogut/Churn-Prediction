@@ -6,7 +6,7 @@
 
 """
 This dataset contains information about a fictional telecommunications company named TeCo, which provides home phone
- and internet services to 7043 customers in California.
+ and internet services to 7043 customers in New York.
 It indicates which customers have left the service, stayed, or signed up for the service.
 """
 
@@ -48,8 +48,8 @@ TotalCharges: The total amount charged from the customer
 Churn: Whether the customer has churned (Yes or No)
 """
 
-
-#                   Görev : Feature Engineering
+#######################################################
+##########   STEP 1: STUDYING THE DATA     ############
 
 df = pd.read_csv("3_Feature_Engineering/HW_Feature_Engineering/Part_I/TelcoCustomerChurn-230423-212029.csv")
 df.info()
@@ -83,6 +83,7 @@ df.info()
 
 
 df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors='coerce')
+df["Churn"] = df["Churn"].apply(lambda x : 1 if x == "Yes" else 0)
 
 def outlier_thresholds(dataframe, col_name, q1=0.25, q3=0.75):
     quartile1 = dataframe[col_name].quantile(q1)
