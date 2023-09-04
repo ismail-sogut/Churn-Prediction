@@ -6,17 +6,26 @@
 
 """
 This dataset contains information about a fictional telecommunications company named TeCo, which provides home phone
- and internet services to 7043 customers in New York.
+ and internet services to 7043 customers in California.
 It indicates which customers have left the service, stayed, or signed up for the service.
 """
 
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
-from sklearn.metrics import accuracy_score
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler, LabelEncoder, StandardScaler, RobustScaler
-# !pip install missingno
+import seaborn as sns
+import matplotlib.pyplot as plt
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from catboost import CatBoostClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import GridSearchCV, cross_validate
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+
+import warnings
+warnings.simplefilter(action="ignore")
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -48,10 +57,11 @@ TotalCharges: The total amount charged from the customer
 Churn: Whether the customer has churned (Yes or No)
 """
 
+
 #######################################################
 ##########   STEP 1: STUDYING THE DATA     ############
 
-df = pd.read_csv("3_Feature_Engineering/HW_Feature_Engineering/Part_I/TelcoCustomerChurn-230423-212029.csv")
+df = pd.read_csv("datasets/TeCoCustomerChurn.csv")
 df.info()
 
 # Out[1] df.info()
@@ -83,66 +93,18 @@ df.info()
 
 
 df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors='coerce')
+
 df["Churn"] = df["Churn"].apply(lambda x : 1 if x == "Yes" else 0)
 
-def outlier_thresholds(dataframe, col_name, q1=0.25, q3=0.75):
-    quartile1 = dataframe[col_name].quantile(q1)
-    quartile3 = dataframe[col_name].quantile(q3)
-    interquantile_range = quartile3 - quartile1
-    up_limit = quartile3 + 1.5 * interquantile_range
-    low_limit = quartile1 - 1.5 * interquantile_range
-    return low_limit, up_limit
-def check_outlier(dataframe, col_name):
-    low_limit, up_limit = outlier_thresholds(dataframe, col_name)
-    if dataframe[(dataframe[col_name] > up_limit) | (dataframe[col_name] < low_limit)].any(axis=None):
-        return True
-    else:
-        return False
+
+### EXPLORATORY DATA ANALYSIS (EDA) :
+
 def grab_col_names(dataframe, cat_th=10, car_th=20):
-    """
-
-    Veri setindeki kategorik, numerik ve kategorik fakat kardinal değişkenlerin isimlerini verir.
-    Not: Kategorik değişkenlerin içerisine numerik görünümlü kategorik değişkenler de dahildir.
-
-    Parameters
-    ------
-        dataframe: dataframe
-                Değişken isimleri alınmak istenilen dataframe
-        cat_th: int, optional
-                numerik fakat kategorik olan değişkenler için sınıf eşik değeri
-        car_th: int, optinal
-                kategorik fakat kardinal değişkenler için sınıf eşik değeri
-
-    Returns
-    ------
-        cat_cols: list
-                Kategorik değişken listesi
-        num_cols: list
-                Numerik değişken listesi
-        cat_but_car: list
-                Kategorik görünümlü kardinal değişken listesi
-
-    Examples
-    ------
-        import seaborn as sns
-        df = sns.load_dataset("iris")
-        print(grab_col_names(df))
-
-
-    Notes
-    ------
-        cat_cols + num_cols + cat_but_car = toplam değişken sayısı
-        num_but_cat cat_cols'un içerisinde.
-        Return olan 3 liste toplamı toplam değişken sayısına eşittir: cat_cols + num_cols + cat_but_car = değişken sayısı
-
-    """
 
     # cat_cols, cat_but_car
     cat_cols = [col for col in dataframe.columns if dataframe[col].dtypes == "O"]
-    num_but_cat = [col for col in dataframe.columns if dataframe[col].nunique() < cat_th and
-                   dataframe[col].dtypes != "O"]
-    cat_but_car = [col for col in dataframe.columns if dataframe[col].nunique() > car_th and
-                   dataframe[col].dtypes == "O"]
+    num_but_cat = [col for col in dataframe.columns if dataframe[col].nunique() < cat_th and dataframe[col].dtypes != "O"]
+    cat_but_car = [col for col in dataframe.columns if dataframe[col].nunique() > car_th and dataframe[col].dtypes == "O"]
     cat_cols = cat_cols + num_but_cat
     cat_cols = [col for col in cat_cols if col not in cat_but_car]
 
@@ -156,23 +118,46 @@ def grab_col_names(dataframe, cat_th=10, car_th=20):
     print(f'num_cols: {len(num_cols)}')
     print(f'cat_but_car: {len(cat_but_car)}')
     print(f'num_but_cat: {len(num_but_cat)}')
+
     return cat_cols, num_cols, cat_but_car
+
 
 cat_cols, num_cols, cat_but_car = grab_col_names(df)
 
-num_cols = [col for col in num_cols if col not in "PassengerId"]
+# Out[2]
+# Observations: 7043
+# Variables: 21
+# cat_cols: 17
+# num_cols: 3
+# cat_but_car: 1
+# num_but_cat: 2
 
-for col in num_cols:
-    print(col, check_outlier(df, col))
 
-# Out[2] tenure False
-# MonthlyCharges False
-# TotalCharges False
+### CORRELATION
+
+
+df[num_cols].corr()
+
+# Out[3]:
+#                 tenure  MonthlyCharges  TotalCharges
+# tenure           1.000           0.248         0.826
+# MonthlyCharges   0.248           1.000         0.651
+# TotalCharges     0.826           0.651         1.000
+
+
+# Correlation Matrix
+df, ax = plt.subplots(figsize=[18, 13])
+sns.heatmap(df[num_cols].corr(), annot=True, fmt=".2f", ax=ax, cmap="magma")
+ax.set_title("Correlation Matrix", fontsize=20)
+plt.show(block=True)
+
+"""
+It is seen that "tenure" and "TotalCharges" correlated positively.
+"""
+
 
 # Analyzing the missing values
-###################
-
-
+##############################
 def missing_values_table(dataframe, na_name=False):
     na_columns = [col for col in dataframe.columns if dataframe[col].isnull().sum() > 0]
 
@@ -185,91 +170,139 @@ def missing_values_table(dataframe, na_name=False):
         return na_columns
 
 missing_values_table(df, True)
-na_cols = missing_values_table(df, True)
 
-# Out[3]               n_miss  ratio
+# Out[4]               n_miss  ratio
 # TotalCharges             11  0.160
 
 
-# TotalCharges değişkeninde 11 adet boşluk var. cinsiyet dağılına göre ortalamaya bakalım ve buna göre boş değerleri
-# dolduralım
+# There are 11 missing values in the Total Charges variable. Let's examine the "Total Charges"
+# and fill in the blanks accordingly.
 
-df.groupby("gender").agg({"TotalCharges": ["mean", "median"]})
 df["TotalCharges"].describe()
 
 df["TotalCharges"] = df["TotalCharges"].fillna(df["TotalCharges"].median())
 
-# boş değerler ort ile dolduruldu
+
+#######################################################
+##########       STEP 2: BASE MODEL          ##########
+
+dff = df.copy()
+cat_cols = [col for col in cat_cols if col not in ["Churn"]]
+cat_cols
+
+def one_hot_encoder(dataframe, categorical_cols, drop_first=False):
+    dataframe = pd.get_dummies(dataframe, columns=categorical_cols, drop_first=drop_first)
+    return dataframe
+dff = one_hot_encoder(dff, cat_cols, drop_first=True)
+
+y = dff["Churn"]
+X = dff.drop(["Churn","customerID"], axis=1)
+
+models = [('LR', LogisticRegression(random_state=12)),
+          ('KNN', KNeighborsClassifier()),
+          ('CART', DecisionTreeClassifier(random_state=12)),
+          ('RF', RandomForestClassifier(random_state=12)),
+          ('XGB', XGBClassifier(random_state=12)),
+          ("LightGBM", LGBMClassifier(random_state=12)),
+          ("CatBoost", CatBoostClassifier(verbose=False, random_state=12))]
+
+for name, model in models:
+    cv_results = cross_validate(model, X, y, cv=5, scoring=["accuracy", "f1", "roc_auc", "precision", "recall"])
+    print(f"########## {name} ##########")
+    print(f"Accuracy: {round(cv_results['test_accuracy'].mean(), 4)}")
+    print(f"Auc: {round(cv_results['test_roc_auc'].mean(), 4)}")
+    print(f"Recall: {round(cv_results['test_recall'].mean(), 4)}")
+    print(f"Precision: {round(cv_results['test_precision'].mean(), 4)}")
+    print(f"F1: {round(cv_results['test_f1'].mean(), 4)}")
+
+# Out[5]
+# ########## LR ##########
+# Accuracy: 0.8051
+# Auc: 0.843
+# Recall: 0.5479
+# Precision: 0.6599
+# F1: 0.5985
+# ########## KNN ##########
+# Accuracy: 0.7619
+# Auc: 0.7438
+# Recall: 0.4446
+# Precision: 0.5654
+# F1: 0.4976
+# ########## CART ##########
+# Accuracy: 0.7263
+# Auc: 0.6524
+# Recall: 0.4933
+# Precision: 0.4847
+# F1: 0.4889
+# ########## RF ##########
+# Accuracy: 0.7894
+# Auc: 0.8233
+# Recall: 0.4815
+# Precision: 0.6374
+# F1: 0.5485
+# ########## XGB ##########
+# Accuracy: 0.7843
+# Auc: 0.8227
+# Recall: 0.5099
+# Precision: 0.6132
+# F1: 0.5565
+# ########## LightGBM ##########
+# Accuracy: 0.7933
+# Auc: 0.8338
+# Recall: 0.5201
+# Precision: 0.6366
+# F1: 0.572
+# ########## CatBoost ##########
+# Accuracy: 0.7988
+# Auc: 0.84
+# Recall: 0.511
+# Precision: 0.6556
+# F1: 0.5742
 
 
-#########  aykırı değer incelemesi
+#######################################################
+##########   STEP 3: FEATURE ENGINEERING     ##########
 
-# check_outlier(df, )
+#   Analyzing the Outliers
+##########################
+
+def outlier_thresholds(dataframe, col_name, q1=0.05, q3=0.95):
+    quartile1 = dataframe[col_name].quantile(q1)
+    quartile3 = dataframe[col_name].quantile(q3)
+    interquantile_range = quartile3 - quartile1
+    up_limit = quartile3 + 1.5 * interquantile_range
+    low_limit = quartile1 - 1.5 * interquantile_range
+    return low_limit, up_limit
+
+def check_outlier(dataframe, col_name):
+    low_limit, up_limit = outlier_thresholds(dataframe, col_name)
+    if dataframe[(dataframe[col_name] > up_limit) | (dataframe[col_name] < low_limit)].any(axis=None):
+        return True
+    else:
+        return False
+
+def replace_with_thresholds(dataframe, variable, q1=0.05, q3=0.95):
+    low_limit, up_limit = outlier_thresholds(dataframe, variable, q1=0.05, q3=0.95)
+    dataframe.loc[(dataframe[variable] < low_limit), variable] = low_limit
+    dataframe.loc[(dataframe[variable] > up_limit), variable] = up_limit
 
 for col in num_cols:
     print(col, check_outlier(df, col))
+    if check_outlier(df, col):
+        replace_with_thresholds(df, col)
 
+# Out[5]
 # tenure False
 # MonthlyCharges False
 # TotalCharges False
 
-# aykırı değer yoktur
+## So, there is NO outlier.....
 
+# CREATING THE NEW FEATURES
+###########################
 
-def missing_vs_target(dataframe, target, na_columns):
-    temp_df = dataframe.copy()
-
-    for col in na_columns:
-        temp_df[col + '_NA_FLAG'] = np.where(temp_df[col].isnull(), 1, 0)
-
-    na_flags = temp_df.loc[:, temp_df.columns.str.contains("_NA_")].columns
-
-    for col in na_flags:
-        print(pd.DataFrame({"TARGET_MEAN": temp_df.groupby(col)[target].mean(),
-                            "Count": temp_df.groupby(col)[target].count()}), end="\n\n\n")
-
-    return
-
-missing_vs_target(df, "TotalCharges", na_cols)
-df.info()
-
-#######################################################
-####### Adım 2: Yeni değişkenler oluşturunuz  #########
-
-
-
-def rare_analyser(dataframe, target, cat_cols):
-    for col in cat_cols:
-        print(col, ":", len(dataframe[col].value_counts()))
-        print(pd.DataFrame({"COUNT": dataframe[col].value_counts(),
-                            "RATIO": dataframe[col].value_counts() / len(dataframe),
-                            "TARGET_MEAN": dataframe.groupby(col)[target].mean()}), end="\n\n\n")
-
-rare_analyser(df, "TotalCharges", cat_cols)
-
-
-# 1- genel inceleme için
-for col in df.columns:
-    print(df[col].describe())
-    print("########################")
-    print("########################", end="\n\n\n")
-
-# 2- unique değerleri inceleme için
-for col in df.columns:
-    print({col: df[col].unique()})
-    print("########################")
-    print("########################", end="\n\n\n")
-
-
-# üstteki 2 incelemeye göre yeni değişkenler üreteceğiz
-
-# 1.YENİ: TENURE
-df["tenure"].describe() # min:0 ve max:72 ay
-df.head()
-df.groupby(["SeniorCitizen", "PaymentMethod"]).agg({"TotalCharges": ["mean" ,"count"]})
-df.groupby(["SeniorCitizen", "PaymentMethod"]).agg({"TotalCharges": ["mean" ,"count"], "tenure": ["mean" ,"count"]})
-df.groupby(["SeniorCitizen", "PaymentMethod"]).agg({"MonthlyCharges": ["sum" , "mean", "count"]})
-df.groupby(["SeniorCitizen", "PaperlessBilling", "PaymentMethod"]).agg({"TotalCharges": ["mean" , "sum", "count"]})
+# 1: TENURE
+df["tenure"].describe() # min:0 ve max:72 months
 
 df.loc[(df["tenure"] > 0) & (df["tenure"] <= 12), "NEW_TENURE"] = "1-year"
 df.loc[(df["tenure"] > 12) & (df["tenure"] <= 24), "NEW_TENURE"] = "2-year"
@@ -278,101 +311,142 @@ df.loc[(df["tenure"] > 36) & (df["tenure"] <= 48), "NEW_TENURE"] = "4-year"
 df.loc[(df["tenure"] > 48) & (df["tenure"] <= 60), "NEW_TENURE"] = "5-year"
 df.loc[(df["tenure"] > 60) & (df["tenure"] <= 72), "NEW_TENURE"] = "6-year"
 
-# 2. YENİ: CONTRACT
+# 2: CONTRACT
 
 # df.loc[(df["Contract"] =="One year") | (df["Contract"] == "Two year"), "NEW_CONTRACT_LENGTH"] = "yearly"
 df["NEW_CONTRACT_LENGTH"] = df["Contract"].apply(lambda x: "yearly" if x in ["One year", "Two year"] else "monthly")
+
+# 3: PAYMENT METHOD
 df["NEW_PAYMENT_METHOD"] = df["PaymentMethod"].apply(lambda x: "elect" if x in ['Electronic check',
                                                                                 'Bank transfer (automatic)',
                                                                                 "Credit card (automatic)"] else "no_elect")
+# 4: PROTECTION
+
+df["NEW_BACKUP_PROTECTION_SUPPORT"] = df.apply(lambda x: 1 if (x["OnlineBackup"] =="Yes") or
+                                                              (x["DeviceProtection"] == "Yes") or
+                                                              (x["TechSupport"] == "Yes") else 0, axis=1)
+
+# 5: CHARGES
+df["NEW_AVG_CHARGES"] = df["TotalCharges"] / (df["tenure"] + 1)
+
+# 6: INCREASE
+
+df["NEW_INCREASE"] = df["NEW_AVG_CHARGES"] / df["MonthlyCharges"]
+
+# 7: TOTAL SERVICE PURCHASED
+
+df['NEW_TOTALSERVICE'] = (df[['PhoneService', 'InternetService', 'OnlineSecurity',
+                                       'OnlineBackup', 'DeviceProtection', 'TechSupport',
+                                       'StreamingTV', 'StreamingMovies']]== 'Yes').sum(axis=1)
+
+# 8: ANY STREAMING
+
+df["NEW_FLAG_ANY_STREAMING"] = df.apply(lambda x: 1 if (x["StreamingTV"] == "Yes") or (x["StreamingMovies"] == "Yes") else 0, axis=1)
 
 
-#######################################################################################################################
+#######################            ENCODING      #############################
 
-#######################      Adım 3: Encoding işlemlerini gerçekleştiriniz.       #####################################
+cat_cols, num_cols, cat_but_car = grab_col_names(df)
 
+# Out[6]
+# Observations: 7043
+# Variables: 29
+# cat_cols: 23
+# num_cols: 5
+# cat_but_car: 1
+# num_but_cat: 5
 
 # Label Encoding
 #############################################
+
 def label_encoder(dataframe, binary_col):
     labelencoder = LabelEncoder()
     dataframe[binary_col] = labelencoder.fit_transform(dataframe[binary_col])
     return dataframe
 
-
-binary_cols = [col for col in df.columns if df[col].dtype not in [int, float]
-               and df[col].nunique() == 2]
+binary_cols = [col for col in df.columns if df[col].dtypes == "O" and df[col].nunique() == 2]
+binary_cols
 
 for col in binary_cols:
     df = label_encoder(df, col)
 
 # One Hot Encoding
+cat_cols = [col for col in cat_cols if col not in binary_cols and col not in ["Churn", "NEW_TOTALSERVICES"]]
+cat_cols
 
-OHE =[col for col in df.columns if 10 >= df[col].nunique() > 2]
-
-def one_hot_encoder(dataframe, categorical_cols, drop_first=True):
+def one_hot_encoder(dataframe, categorical_cols, drop_first=False):
     dataframe = pd.get_dummies(dataframe, columns=categorical_cols, drop_first=drop_first)
     return dataframe
 
-one_hot_encoder(df, OHE, drop_first=True)
+df = one_hot_encoder(df, cat_cols, drop_first=True)
 
 df.head()
+df.info()
+#############################################################################################################
+
+##################################         STEP 4: FINAL MODEL         ######################################
+
+y = df["Churn_1"]
+X = df.drop(["Churn_1","customerID"], axis=1)
 
 
-# StandardScaler:
-###################
+models = [('LR', LogisticRegression(random_state=12)),
+          ('KNN', KNeighborsClassifier()),
+          ('CART', DecisionTreeClassifier(random_state=12)),
+          ('RF', RandomForestClassifier(random_state=12)),
+          ('XGB', XGBClassifier(random_state=12)),
+          ("LightGBM", LGBMClassifier(random_state=12)),
+          ("CatBoost", CatBoostClassifier(verbose=False, random_state=12))]
 
-for col in num_cols:
-    ss = StandardScaler()
-    df[col + "_standard_scaler"] = ss.fit_transform(df[[col]])
-df.head()
-
-# RobustScaler: Medyanı çıkar iqr'a böl.
-###################
-
-for col in num_cols:
-    rs = RobustScaler()
-    df[col + "_robust_scaler"] = rs.fit_transform(df[[col]])
-
-df.head()
-
-# MinMaxScaler: Verilen 2 değer arasında değişken dönüşümü
-###################
-
-# X_std = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
-# X_scaled = X_std * (max - min) + min
-
-for col in num_cols:
-    mms = MinMaxScaler()
-    df[col + "_min_max_scaler"] = mms.fit_transform(df[[col]])
-    df.describe().T
-
-df.head()
-
-
-def num_summary(dataframe, numerical_col, plot=False):
-    quantiles = [0.05, 0.10, 0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
-    print(dataframe[numerical_col].describe(quantiles).T)
-
-    if plot:
-        dataframe[numerical_col].hist(bins=20)
-        plt.xlabel(numerical_col)
-        plt.title(numerical_col)
-        plt.show(block=True)
-
-for col in num_cols:
-    num_summary(df, col, plot=True)
-
-# 8. Model
-#############################################
-
-y = df["Churn"]
-X = df.drop(["customerID", "Churn"], axis=1)
-
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.30, random_state=17)
-
-from sklearn.ensemble import RandomForestClassifier
-
-rf_model = RandomForestClassifier(random_state=46).fit(X_train, y_train)
-y_pred = rf_model.predict(X_test)
-accuracy_score(y_pred, y_test)
+for name, model in models:
+    cv_results = cross_validate(model, X, y, cv=5, scoring=["accuracy", "f1", "roc_auc", "precision", "recall"])
+    print(f"########## {name} ##########")
+    print(f"Accuracy: {round(cv_results['test_accuracy'].mean(), 4)}")
+    print(f"Auc: {round(cv_results['test_roc_auc'].mean(), 4)}")
+    print(f"Recall: {round(cv_results['test_recall'].mean(), 4)}")
+    print(f"Precision: {round(cv_results['test_precision'].mean(), 4)}")
+    print(f"F1: {round(cv_results['test_f1'].mean(), 4)}")
+    
+# Out[7]
+# ########## LR ##########
+# Accuracy: 0.8042
+# Auc: 0.8458
+# Recall: 0.5275
+# Precision: 0.6668
+# F1: 0.588
+# ########## KNN ##########
+# Accuracy: 0.7613
+# Auc: 0.7444
+# Recall: 0.4419
+# Precision: 0.5645
+# F1: 0.4955
+# ########## CART ##########
+# Accuracy: 0.7251
+# Auc: 0.6514
+# Recall: 0.4896
+# Precision: 0.4822
+# F1: 0.4859
+# ########## RF ##########
+# Accuracy: 0.7889
+# Auc: 0.826
+# Recall: 0.489
+# Precision: 0.6321
+# F1: 0.5514
+# ########## XGB ##########
+# Accuracy: 0.7903
+# Auc: 0.825
+# Recall: 0.5142
+# Precision: 0.6292
+# F1: 0.5657
+# ########## LightGBM ##########
+# Accuracy: 0.7931
+# Auc: 0.8355
+# Recall: 0.5265
+# Precision: 0.6326
+# F1: 0.5746
+# ########## CatBoost ##########
+# Accuracy: 0.7965
+# Auc: 0.8419
+# Recall: 0.5147
+# Precision: 0.6468
+# F1: 0.5732
