@@ -59,7 +59,7 @@ Churn: Whether the customer has churned (Yes or No)
 #######################################################
 ##########   STEP 1: STUDYING THE DATA     ############
 
-df = pd.read_csv("3_Feature_Engineering/datasets/TelcoCustomerChurn-230423-212029.csv")
+df = pd.read_csv("datasets/TeCoCustomerChurn.csv")
 df.info()
 
 # Out[1] df.info()
