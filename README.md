@@ -9,5 +9,5 @@ Before creating the model, the necessary data analysis and feature engineering p
 
 ## Data Story
 
-This dataset contains information about a fictional telecommunications company named TeCo, which provides home phone and internet services to 7043 customers in California. 
+This dataset contains information about a fictional telecommunications company named TeCo, which provides home phone and internet services to 7043 customers in New York. 
 It indicates which customers have left the service, stayed, or signed up for the service.
