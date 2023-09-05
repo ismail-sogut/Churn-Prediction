@@ -6,23 +6,21 @@
 
 """
 This dataset contains information about a fictional telecommunications company named TeCo, which provides home phone
- and internet services to 7043 customers in California.
+ and internet services to 7043 customers in New York.
 It indicates which customers have left the service, stayed, or signed up for the service.
 """
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from catboost import CatBoostClassifier
 from sklearn.preprocessing import LabelEncoder
 from sklearn.tree import DecisionTreeClassifier
+from sklearn.model_selection import cross_validate
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import GridSearchCV, cross_validate
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier
 
 import warnings
 warnings.simplefilter(action="ignore")
@@ -61,7 +59,7 @@ Churn: Whether the customer has churned (Yes or No)
 #######################################################
 ##########   STEP 1: STUDYING THE DATA     ############
 
-df = pd.read_csv("datasets/TeCoCustomerChurn.csv")
+df = pd.read_csv("3_Feature_Engineering/datasets/TelcoCustomerChurn-230423-212029.csv")
 df.info()
 
 # Out[1] df.info()
@@ -135,21 +133,13 @@ cat_cols, num_cols, cat_but_car = grab_col_names(df)
 
 ### CORRELATION
 
-
 df[num_cols].corr()
 
 # Out[3]:
 #                 tenure  MonthlyCharges  TotalCharges
-# tenure           1.000           0.248         0.826
+# tenure           1.000           0.248         0.825
 # MonthlyCharges   0.248           1.000         0.651
-# TotalCharges     0.826           0.651         1.000
-
-
-# Correlation Matrix
-df, ax = plt.subplots(figsize=[18, 13])
-sns.heatmap(df[num_cols].corr(), annot=True, fmt=".2f", ax=ax, cmap="magma")
-ax.set_title("Correlation Matrix", fontsize=20)
-plt.show(block=True)
+# TotalCharges     0.825           0.651         1.000
 
 """
 It is seen that "tenure" and "TotalCharges" correlated positively.
@@ -217,17 +207,17 @@ for name, model in models:
 
 # Out[5]
 # ########## LR ##########
-# Accuracy: 0.8051
-# Auc: 0.843
-# Recall: 0.5479
-# Precision: 0.6599
-# F1: 0.5985
+# Accuracy: 0.8049
+# Auc: 0.8429
+# Recall: 0.5436
+# Precision: 0.6612
+# F1: 0.5965
 # ########## KNN ##########
-# Accuracy: 0.7619
-# Auc: 0.7438
-# Recall: 0.4446
-# Precision: 0.5654
-# F1: 0.4976
+# Accuracy: 0.7612
+# Auc: 0.7435
+# Recall: 0.4441
+# Precision: 0.5635
+# F1: 0.4966
 # ########## CART ##########
 # Accuracy: 0.7263
 # Auc: 0.6524
@@ -291,12 +281,6 @@ for col in num_cols:
     if check_outlier(df, col):
         replace_with_thresholds(df, col)
 
-# Out[5]
-# tenure False
-# MonthlyCharges False
-# TotalCharges False
-
-## So, there is NO outlier.....
 
 # CREATING THE NEW FEATURES
 ###########################
@@ -381,13 +365,13 @@ def one_hot_encoder(dataframe, categorical_cols, drop_first=False):
 df = one_hot_encoder(df, cat_cols, drop_first=True)
 
 df.head()
-df.info()
+
 #############################################################################################################
 
 ##################################         STEP 4: FINAL MODEL         ######################################
 
-y = df["Churn_1"]
-X = df.drop(["Churn_1","customerID"], axis=1)
+y = df["Churn"]
+X = df.drop(["Churn","customerID"], axis=1)
 
 
 models = [('LR', LogisticRegression(random_state=12)),
@@ -406,38 +390,38 @@ for name, model in models:
     print(f"Recall: {round(cv_results['test_recall'].mean(), 4)}")
     print(f"Precision: {round(cv_results['test_precision'].mean(), 4)}")
     print(f"F1: {round(cv_results['test_f1'].mean(), 4)}")
-    
+
 # Out[7]
 # ########## LR ##########
-# Accuracy: 0.8042
-# Auc: 0.8458
-# Recall: 0.5275
-# Precision: 0.6668
-# F1: 0.588
+# Accuracy: 0.8043
+# Auc: 0.846
+# Recall: 0.5318
+# Precision: 0.6644
+# F1: 0.5907
 # ########## KNN ##########
-# Accuracy: 0.7613
-# Auc: 0.7444
-# Recall: 0.4419
-# Precision: 0.5645
-# F1: 0.4955
+# Accuracy: 0.7609
+# Auc: 0.744
+# Recall: 0.4409
+# Precision: 0.5635
+# F1: 0.4945
 # ########## CART ##########
-# Accuracy: 0.7251
-# Auc: 0.6514
-# Recall: 0.4896
-# Precision: 0.4822
-# F1: 0.4859
+# Accuracy: 0.7243
+# Auc: 0.6476
+# Recall: 0.481
+# Precision: 0.4807
+# F1: 0.4808
 # ########## RF ##########
-# Accuracy: 0.7889
-# Auc: 0.826
-# Recall: 0.489
-# Precision: 0.6321
-# F1: 0.5514
+# Accuracy: 0.7928
+# Auc: 0.8264
+# Recall: 0.4858
+# Precision: 0.6463
+# F1: 0.5547
 # ########## XGB ##########
-# Accuracy: 0.7903
-# Auc: 0.825
-# Recall: 0.5142
-# Precision: 0.6292
-# F1: 0.5657
+# Accuracy: 0.787
+# Auc: 0.8242
+# Recall: 0.5078
+# Precision: 0.6213
+# F1: 0.5586
 # ########## LightGBM ##########
 # Accuracy: 0.7931
 # Auc: 0.8355
@@ -445,8 +429,13 @@ for name, model in models:
 # Precision: 0.6326
 # F1: 0.5746
 # ########## CatBoost ##########
-# Accuracy: 0.7965
-# Auc: 0.8419
-# Recall: 0.5147
-# Precision: 0.6468
-# F1: 0.5732
+# Accuracy: 0.7995
+# Auc: 0.8423
+# Recall: 0.5185
+# Precision: 0.6546
+# F1: 0.5785
+
+
+"""
+It's obvious that ,after feature engineering, our scores have increased...
+"""
